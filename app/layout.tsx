@@ -26,8 +26,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EduFi — Web3 Student Loan Funding",
-  description: "Tranched student loan pools for investors and aggregators",
+  title: "QuillFi — Onchain Student Loan Finance",
+  description: "Transparent student loan bundles with tranche-based capital formation and onchain investor access.",
 };
 
 export default function RootLayout({

@@ -1,15 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Layers,
-  BarChart2,
-  Clock,
-  Folder,
-  Shield,
-  GraduationCap,
-} from "lucide-react";
+import { Layers, BarChart2, Clock, Folder, Shield } from "lucide-react";
 import { useWalletStore } from "@/lib/stores/useWalletStore";
 
 const navItems = [
@@ -28,14 +22,21 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 z-30 h-screen w-[240px] border-r border-[var(--border)] bg-[var(--surface)] flex flex-col">
       <div className="p-5 border-b border-[var(--border)]">
         <Link href="/bundle-pool" className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary)]/15">
-            <GraduationCap className="h-5 w-5 text-[var(--primary)]" />
+          <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white/90 shadow-sm">
+            <Image
+              src="/Logo.jpg"
+              alt="QuillFi logo"
+              width={36}
+              height={36}
+              className="h-9 w-9 object-cover"
+              priority
+            />
           </div>
           <span
             className="text-xl tracking-tight text-[var(--text-primary)]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            EduFi
+            QuillFi
           </span>
         </Link>
       </div>

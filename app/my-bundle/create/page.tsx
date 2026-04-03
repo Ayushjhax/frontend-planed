@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, type FieldPath } from "react-hook-form";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Step1_BundleInfo } from "@/components/forms/Step1_BundleInfo";
@@ -12,49 +12,11 @@ import { Step4_Review } from "@/components/forms/Step4_Review";
 import { useBundleStore } from "@/lib/stores/useBundleStore";
 import { useWalletStore } from "@/lib/stores/useWalletStore";
 import { useToastStore } from "@/lib/stores/useToastStore";
+import {
+  createBundleDefaultValues,
+  type CreateBundleFormValues,
+} from "@/lib/types/createBundleForm";
 import { ArrowLeft, Check } from "lucide-react";
-
-interface FormValues {
-  name: string;
-  oneliner: string;
-  description: string;
-  contractPdfName: string;
-  totalGoal: number;
-  seniorTarget: number;
-  juniorTarget: number;
-  subordinationRate: number;
-  seniorFixedRate: number;
-  juniorFixedRate: number;
-  seniorAPY: number;
-  juniorAPY: number;
-  startDate: string;
-  endDate: string;
-  repaymentFrequency: "Monthly" | "Quarterly" | "Bi-Annual";
-  totalRepaymentCycles: number;
-  estimatedFirstRepayment: string;
-  redemptionRate: number;
-}
-
-const defaultValues: FormValues = {
-  name: "",
-  oneliner: "",
-  description: "",
-  contractPdfName: "",
-  totalGoal: 50000,
-  seniorTarget: 30000,
-  juniorTarget: 20000,
-  subordinationRate: 40,
-  seniorFixedRate: 0,
-  juniorFixedRate: 1,
-  seniorAPY: 0,
-  juniorAPY: 1,
-  startDate: "",
-  endDate: "",
-  repaymentFrequency: "Monthly",
-  totalRepaymentCycles: 12,
-  estimatedFirstRepayment: "",
-  redemptionRate: 100,
-};
 
 const steps = [
   { id: 1, title: "Bundle Info" },
@@ -62,6 +24,27 @@ const steps = [
   { id: 3, title: "Vault Preview" },
   { id: 4, title: "Review & Submit" },
 ];
+
+const stepFields: Record<number, FieldPath<CreateBundleFormValues>[]> = {
+  1: ["name", "oneliner", "description"],
+  2: [
+    "totalGoal",
+    "juniorAPY",
+    "seniorTarget",
+    "juniorTarget",
+    "subordinationRate",
+    "seniorFixedRate",
+    "juniorFixedRate",
+    "startDate",
+    "endDate",
+    "repaymentFrequency",
+    "totalRepaymentCycles",
+    "estimatedFirstRepayment",
+    "redemptionRate",
+  ],
+  3: [],
+  4: [],
+};
 
 export default function CreateBundlePage() {
   const [step, setStep] = useState(1);
@@ -72,10 +55,55 @@ export default function CreateBundlePage() {
   const addToast = useToastStore((s) => s.addToast);
   const walletAddress = useWalletStore((s) => s.address);
 
-  const form = useForm<FormValues>({ defaultValues });
+  const form = useForm<CreateBundleFormValues>({
+    defaultValues: createBundleDefaultValues,
+    mode: "onTouched",
+  });
 
-  const goNext = () => {
-    if (step < 4) setStep((s) => s + 1);
+  const sendUserToFirstInvalidStep = () => {
+    const errorKeys = Object.keys(form.formState.errors);
+    if (stepFields[1].some((field) => errorKeys.includes(field))) {
+      setStep(1);
+      return;
+    }
+    if (stepFields[2].some((field) => errorKeys.includes(field))) {
+      setStep(2);
+    }
+  };
+
+  const validateStepsUntil = async (targetStep: number) => {
+    const requiredFields = Object.entries(stepFields)
+      .filter(([id]) => Number(id) < targetStep)
+      .flatMap(([, fields]) => fields);
+
+    if (requiredFields.length === 0) return true;
+
+    const valid = await form.trigger(requiredFields);
+    if (!valid) {
+      sendUserToFirstInvalidStep();
+      addToast("Please fix the highlighted bundle details before continuing.", "error");
+    }
+    return valid;
+  };
+
+  const goToStep = async (targetStep: number) => {
+    if (targetStep <= step) {
+      setStep(targetStep);
+      return;
+    }
+
+    const valid = await validateStepsUntil(targetStep);
+    if (valid) {
+      setStep(targetStep);
+    }
+  };
+
+  const goNext = async () => {
+    if (step >= 4) return;
+    const valid = await validateStepsUntil(step + 1);
+    if (valid) {
+      setStep((s) => s + 1);
+    }
   };
 
   const goPrev = () => {
@@ -83,12 +111,29 @@ export default function CreateBundlePage() {
   };
 
   const handleFinalSubmit = async () => {
-    const values = form.getValues();
-    if (!values.name) {
-      addToast("Bundle name is required.", "error");
-      setStep(1);
+    const isValid = await validateStepsUntil(4);
+    if (!isValid) {
       return;
     }
+
+    const values = form.getValues();
+    const totalGoal = Number(values.totalGoal);
+    const seniorTarget = Number(values.seniorTarget);
+    const juniorTarget = Number(values.juniorTarget);
+
+    if (seniorTarget + juniorTarget !== totalGoal) {
+      setStep(2);
+      addToast("Senior and junior targets must exactly match the total fundraising goal.", "error");
+      return;
+    }
+
+    const daysRemaining = Math.max(
+      Math.ceil(
+        (new Date(values.endDate).getTime() - new Date().getTime()) / 86400000
+      ),
+      0
+    );
+
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 2000));
     const id = `bundle-${Date.now()}`;
@@ -118,7 +163,7 @@ export default function CreateBundlePage() {
       vaultAddress: "4xK9...mR3q",
       submittedAt: new Date().toISOString(),
       createdBy: walletAddress,
-      daysRemaining: 60,
+      daysRemaining,
     });
     setSubmitting(false);
     addToast("Bundle submitted for review. You'll be notified once approved.");
@@ -134,7 +179,10 @@ export default function CreateBundlePage() {
       <h1 className="text-2xl text-[var(--text-primary)] mb-2" style={{ fontFamily: "var(--font-display)" }}>
         Create Bundle
       </h1>
-      <p className="text-sm text-[var(--text-muted)] mb-8">Fill in the details to create a new student loan bundle pool.</p>
+      <p className="text-sm leading-6 text-[var(--text-muted)] mb-8">
+        Define the public narrative, tranche terms, and repayment structure investors
+        will review before the bundle can go live.
+      </p>
 
       {/* Step indicator */}
       <div className="flex items-center gap-1 mb-8">
@@ -142,7 +190,7 @@ export default function CreateBundlePage() {
           <div key={s.id} className="flex items-center">
             <button
               type="button"
-              onClick={() => setStep(s.id)}
+              onClick={() => void goToStep(s.id)}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
                 step === s.id
                   ? "bg-[var(--primary)] text-white shadow-lg shadow-blue-500/20"
@@ -197,7 +245,7 @@ export default function CreateBundlePage() {
               Previous
             </Button>
             {step < 4 ? (
-              <Button type="button" onClick={goNext}>
+              <Button type="button" onClick={() => void goNext()}>
                 Next
               </Button>
             ) : (

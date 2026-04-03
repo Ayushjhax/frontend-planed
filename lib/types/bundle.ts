@@ -33,6 +33,8 @@ export interface Bundle {
   vaultAddress: string;
   submittedAt?: string;
   approvedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
   declineReason?: string;
   createdBy: string;
   daysRemaining?: number;

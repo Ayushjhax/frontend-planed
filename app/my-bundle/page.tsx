@@ -37,13 +37,13 @@ export default function MyBundlePage() {
           className="text-xl font-semibold text-[var(--text-primary)]"
           style={{ fontFamily: "var(--font-display)" }}
         >
-          Planed
+          My Bundles
         </h1>
         <Link href="/my-bundle/create">
           <Button>+ Create Bundle</Button>
         </Link>
       </div>
-      <p className="text-sm text-[var(--text-muted)] -mt-4">Your bundle pool management</p>
+      <p className="text-sm text-[var(--text-muted)] -mt-4">Create, track, and manage QuillFi bundle submissions across their full lifecycle.</p>
 
       <div className="flex flex-wrap gap-2">
         {tabs.map((t) => (

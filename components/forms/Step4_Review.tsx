@@ -40,8 +40,12 @@ export function Step4_Review() {
             <span className="font-mono text-[var(--junior-tranche)]">${Number(values.juniorTarget || 0).toLocaleString()}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[var(--text-muted)]">APY (Senior / Junior)</span>
+            <span className="text-[var(--text-muted)]">Fixed Rate (Senior / Junior)</span>
             <span className="font-mono">{values.seniorFixedRate ?? 0}% / {values.juniorFixedRate ?? 1}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[var(--text-muted)]">Expected Junior APY</span>
+            <span className="font-mono">{values.juniorAPY ?? 1}%</span>
           </div>
           <div className="flex justify-between">
             <span className="text-[var(--text-muted)]">Repayment</span>

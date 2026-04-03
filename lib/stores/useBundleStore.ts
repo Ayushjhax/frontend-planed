@@ -8,8 +8,8 @@ interface BundleStore {
   addBundle: (bundle: Bundle) => void;
   updateBundle: (id: string, updates: Partial<Bundle>) => void;
   invest: (bundleId: string, tranche: "senior" | "junior", amount: number) => void;
-  approveBundle: (id: string) => void;
-  declineBundle: (id: string, reason: string) => void;
+  approveBundle: (id: string, reviewer: string) => void;
+  declineBundle: (id: string, reason: string, reviewer: string) => void;
   setBundles: (bundles: Bundle[]) => void;
 }
 
@@ -38,19 +38,34 @@ export const useBundleStore = create<BundleStore>()(
           }),
         })),
 
-      approveBundle: (id) =>
+      approveBundle: (id, reviewer) =>
         set((state) => ({
           bundles: state.bundles.map((b) =>
             b.id === id
-              ? { ...b, status: "live" as const, approvedAt: new Date().toISOString() }
+              ? {
+                  ...b,
+                  status: "live" as const,
+                  approvedAt: new Date().toISOString(),
+                  reviewedAt: new Date().toISOString(),
+                  reviewedBy: reviewer,
+                  declineReason: undefined,
+                }
               : b
           ),
         })),
 
-      declineBundle: (id, reason) =>
+      declineBundle: (id, reason, reviewer) =>
         set((state) => ({
           bundles: state.bundles.map((b) =>
-            b.id === id ? { ...b, status: "declined" as const, declineReason: reason } : b
+            b.id === id
+              ? {
+                  ...b,
+                  status: "declined" as const,
+                  declineReason: reason,
+                  reviewedAt: new Date().toISOString(),
+                  reviewedBy: reviewer,
+                }
+              : b
           ),
         })),
 
