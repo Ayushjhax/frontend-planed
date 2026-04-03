@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { demoTransactions } from "@/lib/mock/demoData";
+import { usePortfolioStore } from "@/lib/stores/usePortfolioStore";
 import { formatTxUrl } from "@/lib/solana/program";
 import type { TransactionType } from "@/lib/types/bundle";
 import { Clock } from "lucide-react";
@@ -28,11 +28,12 @@ function truncateHash(hash: string) {
 
 export default function TransactionHistoryPage() {
   const [filter, setFilter] = useState("all");
+  const transactions = usePortfolioStore((s) => s.transactions);
 
   const list =
     filter === "all"
-      ? demoTransactions
-      : demoTransactions.filter((t) => t.type === filter);
+      ? transactions
+      : transactions.filter((t) => t.type === filter);
 
   return (
     <div className="p-6 space-y-6">
@@ -47,8 +48,11 @@ export default function TransactionHistoryPage() {
           >
             Transaction History
           </h1>
-          <p className="text-sm text-[var(--text-muted)]">View all your on-chain transactions</p>
+          <p className="text-sm text-[var(--text-muted)]">Preview portfolio activity while investor settlement wiring is still in progress</p>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--text-muted)]">
       </div>
 
       <div className="flex flex-wrap gap-2">

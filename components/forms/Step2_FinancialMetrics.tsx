@@ -59,14 +59,14 @@ export function Step2_FinancialMetrics() {
           <Label>Expected APY (Junior Tranche) *</Label>
           <Input
             type="number"
-            min={0}
+            min={0.01}
             max={100}
             step={0.01}
             placeholder="1"
             className="mt-1"
             {...register("juniorAPY", {
               required: "Expected junior APY is required.",
-              min: { value: 0, message: "APY cannot be negative." },
+              min: { value: 0.01, message: "Expected junior APY must be greater than 0%." },
               max: { value: 100, message: "Keep the projected APY within 0 to 100%." },
               valueAsNumber: true,
             })}
@@ -132,20 +132,20 @@ export function Step2_FinancialMetrics() {
           <Label>Subordination Rate (%) *</Label>
           <Input
             type="number"
-            min={0}
-            max={100}
+            min={5}
+            max={50}
             step={0.01}
             placeholder="40"
             className="mt-1"
             {...register("subordinationRate", {
               required: "Subordination rate is required.",
-              min: { value: 0, message: "Subordination rate cannot be negative." },
-              max: { value: 100, message: "Subordination rate cannot exceed 100%." },
+              min: { value: 5, message: "Subordination rate must be at least 5%." },
+              max: { value: 50, message: "Subordination rate cannot exceed 50%." },
               valueAsNumber: true,
             })}
           />
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Enter the share of the pool designed to absorb first losses before senior capital is affected.
+            Enter the junior first-loss share of the pool. The contract currently supports a range of 5% to 50%.
           </p>
           {errors.subordinationRate && (
             <p className="text-xs text-[var(--error)] mt-1">{errors.subordinationRate.message}</p>
@@ -155,14 +155,14 @@ export function Step2_FinancialMetrics() {
           <Label>Senior Fixed Rate (%) *</Label>
           <Input
             type="number"
-            min={0}
+            min={0.01}
             max={100}
             step={0.01}
-            defaultValue={0}
+            defaultValue={1}
             className="mt-1"
             {...register("seniorFixedRate", {
               required: "Senior fixed rate is required.",
-              min: { value: 0, message: "Senior fixed rate cannot be negative." },
+              min: { value: 0.01, message: "Senior fixed rate must be greater than 0%." },
               max: { value: 100, message: "Senior fixed rate cannot exceed 100%." },
               valueAsNumber: true,
             })}

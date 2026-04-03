@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { useWalletStore } from "@/lib/stores/useWalletStore";
 import { useToastStore } from "@/lib/stores/useToastStore";
 import type { Bundle } from "@/lib/types/bundle";
 import { BundleStatusBadge } from "./BundleStatusBadge";
@@ -135,19 +136,44 @@ function InvestModal({
 }) {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
-  const [txHash, setTxHash] = useState<string | null>(null);
   const num = Number(amount) || 0;
   const addToast = useToastStore((s) => s.addToast);
+  const connected = useWalletStore((s) => s.connected);
+  const remaining =
+    tranche === "senior"
+      ? Math.max(bundle.seniorTarget - bundle.seniorRaised, 0)
+      : Math.max(bundle.juniorTarget - bundle.juniorRaised, 0);
 
   const handleSubmit = async () => {
-    if (num <= 0) return;
+    if (!connected) {
+      addToast("Connect your wallet to place a demo investment.", "error");
+      return;
+    }
+
+    if (!Number.isFinite(num) || num <= 0) return;
+
+    if (!Number.isInteger(num)) {
+      addToast("Use whole-number USDC amounts for demo investments.", "error");
+      return;
+    }
+
+    if (num > remaining) {
+      addToast(
+        `That exceeds the remaining ${tranche} capacity of $${remaining.toLocaleString()}.`,
+        "error"
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      const { mockTransaction } = await import("@/lib/solana/program");
-      const hash = await mockTransaction();
-      setTxHash(hash);
+      await new Promise((resolve) => setTimeout(resolve, 700));
       onConfirm(num);
-      addToast("Investment confirmed. Tx: " + hash.slice(0, 8) + "...");
+      addToast(
+        `Demo commitment added: $${num.toLocaleString()} to the ${tranche} tranche.`,
+        "success"
+      );
+      onClose();
     } finally {
       setLoading(false);
     }
@@ -166,6 +192,7 @@ function InvestModal({
         <p className="text-sm text-[var(--text-muted)] mb-4">
           {tranche === "senior" ? "Senior" : "Junior"} tranche
         </p>
+       
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-[var(--text-muted)] mb-1">
@@ -180,26 +207,24 @@ function InvestModal({
               placeholder="0"
             />
           </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            Remaining capacity: ${remaining.toLocaleString()}
+          </p>
           {num > 0 && (
             <p className="text-sm text-[var(--text-muted)]">
-              Your EDUFI tokens to receive: <strong className="text-[var(--text-primary)]">{num}</strong>
+              Your QuillFi receipt tokens to receive: <strong className="text-[var(--text-primary)]">{num}</strong>
             </p>
           )}
         </div>
-        {txHash && (
-          <p className="mt-2 text-xs text-[var(--primary)] font-mono">
-            Tx: {txHash.slice(0, 8)}...{txHash.slice(-4)}
-          </p>
-        )}
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={num <= 0 || loading}
+            disabled={num <= 0 || loading || remaining <= 0}
           >
-            {loading ? "Confirming..." : "Confirm Investment"}
+            {loading ? "Saving..." : remaining > 0 ? "Confirm Demo Investment" : "Fully Allocated"}
           </Button>
         </div>
       </div>

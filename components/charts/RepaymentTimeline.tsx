@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import {
   BarChart,
   Bar,
@@ -14,9 +15,18 @@ interface RepaymentTimelineProps {
   data: { month: string; amount: number }[];
 }
 
+const subscribe = () => () => {};
+
 export function RepaymentTimeline({ data }: RepaymentTimelineProps) {
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
+
   return (
     <div className="h-[280px] min-h-[200px] w-full min-w-0">
+      {!mounted ? (
+        <div className="flex h-full items-center justify-center rounded-xl bg-[var(--surface-2)] text-sm text-[var(--text-muted)]">
+          Loading repayment schedule...
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -46,6 +56,7 @@ export function RepaymentTimeline({ data }: RepaymentTimelineProps) {
           />
         </BarChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }

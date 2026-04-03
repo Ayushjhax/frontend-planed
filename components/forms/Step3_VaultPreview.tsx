@@ -131,7 +131,7 @@ export function Step3_VaultPreview() {
               stroke="var(--senior-tranche)"
             />
             <text x="70" y="145" textAnchor="middle" fill="var(--text-primary)" fontSize="11">
-              EDUFI Tokens (1:1)
+              QuillFi Receipts
             </text>
             <rect
               x="210"

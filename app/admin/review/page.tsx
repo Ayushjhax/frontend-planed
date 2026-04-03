@@ -1,12 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useWalletStore } from "@/lib/stores/useWalletStore";
 import { useBundleStore } from "@/lib/stores/useBundleStore";
 import { useToastStore } from "@/lib/stores/useToastStore";
 import { Button } from "@/components/ui/button";
-import { ADMIN_WALLET } from "@/lib/mock/demoData";
-import { Shield, FileText, Clock3, CircleCheckBig, TriangleAlert } from "lucide-react";
+import {
+  BUNDLE_APPROVAL_FEE_RECIPIENT,
+  BUNDLE_APPROVAL_FEE_SOL,
+  approveAssetPoolOnChain,
+  declineAssetPoolOnChain,
+  fetchSystemConfig,
+} from "@/lib/solana/program";
+import type { Bundle } from "@/lib/types/bundle";
+import {
+  Shield,
+  Clock3,
+  CircleCheckBig,
+  TriangleAlert,
+  CalendarRange,
+  Percent,
+  Repeat2,
+} from "lucide-react";
 
 const tabs = [
   { value: "pending", label: "Pending Review" },
@@ -14,20 +30,58 @@ const tabs = [
   { value: "declined", label: "Declined" },
 ];
 
+function shortAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
 export default function AdminReviewPage() {
+  const { connection } = useConnection();
+  const anchorWallet = useAnchorWallet();
   const { connected, address } = useWalletStore();
   const bundles = useBundleStore((s) => s.bundles);
-  const approveBundle = useBundleStore((s) => s.approveBundle);
-  const declineBundle = useBundleStore((s) => s.declineBundle);
+  const loading = useBundleStore((s) => s.loading);
+  const error = useBundleStore((s) => s.error);
+  const refreshBundles = useBundleStore((s) => s.refreshBundles);
   const addToast = useToastStore((s) => s.addToast);
   const [tab, setTab] = useState("pending");
-  const [declineModal, setDeclineModal] = useState<{ id: string; name: string } | null>(null);
+  const [protocolAdmin, setProtocolAdmin] = useState<string | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [pendingBundleId, setPendingBundleId] = useState<string | null>(null);
+  const [declineModal, setDeclineModal] = useState<Bundle | null>(null);
   const [declineReason, setDeclineReason] = useState("");
 
-  const pending = bundles.filter((b) => b.status === "under_review");
-  const approved = bundles.filter((b) => b.status === "live");
-  const declined = bundles.filter((b) => b.status === "declined");
-  const isAdmin = connected && address === ADMIN_WALLET;
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoadingConfig(true);
+
+    void fetchSystemConfig(connection)
+      .then((config) => {
+        if (!cancelled) {
+          setProtocolAdmin(config?.superAdmin ?? null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProtocolAdmin(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingConfig(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connection]);
+
+  const pending = bundles.filter((bundle) => bundle.status === "under_review");
+  const approved = bundles.filter((bundle) => bundle.status === "live");
+  const declined = bundles.filter((bundle) => bundle.status === "declined");
+  const isAdminViewer = connected && Boolean(address) && protocolAdmin === address;
+  const isProtocolAdmin = connected && Boolean(address) && protocolAdmin === address;
   const averagePendingGoal = useMemo(() => {
     if (pending.length === 0) return 0;
     return pending.reduce((sum, bundle) => sum + bundle.totalGoal, 0) / pending.length;
@@ -36,20 +90,142 @@ export default function AdminReviewPage() {
   const list =
     tab === "pending" ? pending : tab === "approved" ? approved : declined;
 
-  const handleApprove = (id: string) => {
-    approveBundle(id, address);
-    addToast("Bundle approved and promoted to live.", "success");
-  };
-
-  const handleDecline = (id: string, reason: string) => {
-    if (reason.trim().length < 12) {
-      addToast("Add a more specific decline reason so the originator can act on it.", "error");
+  const handleApprove = async (bundle: Bundle) => {
+    if (!anchorWallet) {
+      addToast("Connect the configured admin wallet before approving pools.", "error");
       return;
     }
-    declineBundle(id, reason.trim(), address);
-    setDeclineModal(null);
-    setDeclineReason("");
-    addToast("Bundle declined and feedback has been recorded.", "info");
+
+    if (!isProtocolAdmin) {
+      addToast(
+        "This wallet can view the admin console, but only the on-chain super-admin can approve bundles.",
+        "error"
+      );
+      return;
+    }
+
+    setPendingBundleId(bundle.id);
+
+    try {
+      const signature = await approveAssetPoolOnChain({
+        connection,
+        wallet: anchorWallet,
+        creator: bundle.createdBy,
+        name: bundle.name,
+      });
+
+      await refreshBundles(connection);
+      addToast(
+        `Bundle approved on-chain. Tx: ${signature.slice(0, 8)}...`,
+        "success"
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Approval failed on-chain.";
+      addToast(message, "error");
+    } finally {
+      setPendingBundleId(null);
+    }
+  };
+
+  const handleDecline = async (bundle: Bundle, reason: string) => {
+    if (!anchorWallet) {
+      addToast("Connect the configured admin wallet before declining pools.", "error");
+      return;
+    }
+
+    if (!isProtocolAdmin) {
+      addToast(
+        "This wallet can view the admin console, but only the on-chain super-admin can decline bundles.",
+        "error"
+      );
+      return;
+    }
+
+    if (reason.trim().length < 12) {
+      addToast(
+        "Add a brief internal review note before declining. It will not be stored on-chain yet.",
+        "error"
+      );
+      return;
+    }
+
+    setPendingBundleId(bundle.id);
+
+    try {
+      const signature = await declineAssetPoolOnChain({
+        connection,
+        wallet: anchorWallet,
+        creator: bundle.createdBy,
+        name: bundle.name,
+      });
+
+      await refreshBundles(connection);
+      setDeclineModal(null);
+      setDeclineReason("");
+      addToast(
+        `Bundle declined on-chain. Tx: ${signature.slice(0, 8)}... Review notes remain off-chain for now.`,
+        "info"
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Decline failed on-chain.";
+      addToast(message, "error");
+    } finally {
+      setPendingBundleId(null);
+    }
+  };
+
+  const reviewStats = [
+    {
+      label: "Pending Review",
+      value: String(pending.length),
+      helper: "Pools awaiting admin action",
+      icon: Clock3,
+      color: "text-[var(--warning)]",
+    },
+    {
+      label: "Approved",
+      value: String(approved.length),
+      helper: "Pools already live on-chain",
+      icon: CircleCheckBig,
+      color: "text-[var(--success)]",
+    },
+    {
+      label: "Declined",
+      value: String(declined.length),
+      helper: "Pools marked cancelled on-chain",
+      icon: TriangleAlert,
+      color: "text-[var(--error)]",
+    },
+  ];
+
+  const getReviewSignals = (bundle: Bundle) => {
+    const allocationBalanced = bundle.totalGoal === bundle.seniorTarget + bundle.juniorTarget;
+    const fundingWindowValid = new Date(bundle.endDate) > new Date(bundle.startDate);
+    const repaymentScheduleValid =
+      bundle.totalRepaymentCycles > 0 && Boolean(bundle.estimatedFirstRepayment);
+
+    return [
+      {
+        label: "Capital structure",
+        state: allocationBalanced ? "Balanced" : "Check",
+        tone: allocationBalanced ? "text-[var(--success)]" : "text-[var(--warning)]",
+        icon: Percent,
+      },
+      {
+        label: "Funding window",
+        state: fundingWindowValid ? "Defined" : "Invalid",
+        tone: fundingWindowValid ? "text-[var(--success)]" : "text-[var(--warning)]",
+        icon: CalendarRange,
+      },
+      {
+        label: "Repayment schedule",
+        state: repaymentScheduleValid ? "Ready" : "Check",
+        tone: repaymentScheduleValid ? "text-[var(--success)]" : "text-[var(--warning)]",
+        icon: Repeat2,
+      },
+    ];
   };
 
   if (!connected) {
@@ -59,12 +235,38 @@ export default function AdminReviewPage() {
           <Shield className="h-10 w-10 text-[var(--text-muted)]" />
         </div>
         <h2 className="text-xl font-semibold text-[var(--text-primary)]">Admin Access</h2>
-        <p className="text-[var(--text-muted)]">Connect your wallet to access the admin panel.</p>
+        <p className="text-[var(--text-muted)]">Connect your wallet to access the on-chain review console.</p>
       </div>
     );
   }
 
-  if (!isAdmin) {
+  if (loadingConfig) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--surface-2)]">
+          <Shield className="h-10 w-10 text-[var(--text-muted)]" />
+        </div>
+        <h2 className="text-xl font-semibold text-[var(--text-primary)]">Loading Admin Console</h2>
+        <p className="text-[var(--text-muted)]">Fetching the protocol system config from devnet...</p>
+      </div>
+    );
+  }
+
+  if (!protocolAdmin) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--surface-2)]">
+          <Shield className="h-10 w-10 text-[var(--text-muted)]" />
+        </div>
+        <h2 className="text-xl font-semibold text-[var(--text-primary)]">Protocol Config Missing</h2>
+        <p className="max-w-md text-center text-[var(--text-muted)]">
+          The system config account does not exist on this cluster yet, so admin review cannot start.
+        </p>
+      </div>
+    );
+  }
+
+  if (!isAdminViewer) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-[var(--surface-2)]">
@@ -72,62 +274,14 @@ export default function AdminReviewPage() {
         </div>
         <h2 className="text-xl font-semibold text-[var(--text-primary)]">Restricted Admin Access</h2>
         <p className="max-w-md text-center text-[var(--text-muted)]">
-          The review console is only available to the configured QuillFi admin wallet.
+          The review console is only available to the protocol super-admin wallet recorded on-chain.
         </p>
         <p className="font-mono text-xs text-[var(--text-muted)]">
-          Connected: {address.slice(0, 6)}...{address.slice(-4)}
+          Required: {shortAddress(protocolAdmin)}
         </p>
       </div>
     );
   }
-
-  const reviewStats = [
-    {
-      label: "Pending Review",
-      value: String(pending.length),
-      helper: "Bundles awaiting decision",
-      icon: Clock3,
-      color: "text-[var(--warning)]",
-    },
-    {
-      label: "Approved",
-      value: String(approved.length),
-      helper: "Bundles currently live",
-      icon: CircleCheckBig,
-      color: "text-[var(--success)]",
-    },
-    {
-      label: "Declined",
-      value: String(declined.length),
-      helper: "Returned with feedback",
-      icon: TriangleAlert,
-      color: "text-[var(--error)]",
-    },
-  ];
-
-  const getReviewSignals = (bundle: (typeof bundles)[number]) => {
-    const allocationBalanced = bundle.totalGoal === bundle.seniorTarget + bundle.juniorTarget;
-    const hasDocumentation = Boolean(bundle.contractPdfName);
-    const hasSchedule = Boolean(bundle.estimatedFirstRepayment && bundle.endDate);
-
-    return [
-      {
-        label: "Capital structure",
-        state: allocationBalanced ? "Ready" : "Check",
-        tone: allocationBalanced ? "text-[var(--success)]" : "text-[var(--warning)]",
-      },
-      {
-        label: "Documents",
-        state: hasDocumentation ? "Attached" : "Missing",
-        tone: hasDocumentation ? "text-[var(--success)]" : "text-[var(--warning)]",
-      },
-      {
-        label: "Repayment schedule",
-        state: hasSchedule ? "Defined" : "Incomplete",
-        tone: hasSchedule ? "text-[var(--success)]" : "text-[var(--warning)]",
-      },
-    ];
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -139,9 +293,17 @@ export default function AdminReviewPage() {
           <h1 className="text-xl font-semibold text-[var(--text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
             Admin Review Panel
           </h1>
-          <p className="text-sm text-[var(--text-muted)]">Review, approve, and return bundle submissions with documented feedback</p>
+          <p className="text-sm text-[var(--text-muted)]">
+            Review and action QuillFi asset pools directly against Solana program state
+          </p>
         </div>
       </div>
+
+      {(loading || error) && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--text-muted)]">
+          {loading ? "Refreshing asset pools from devnet..." : error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {reviewStats.map((stat) => {
@@ -164,24 +326,26 @@ export default function AdminReviewPage() {
         <div className="card-surface p-4">
           <p className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Avg Pending Goal</p>
           <p className="mt-2 font-mono text-2xl text-[var(--text-primary)]">${averagePendingGoal.toLocaleString()}</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">Average size of queued submissions</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Average queue size in USDC</p>
         </div>
       </div>
 
+     
+
       <div className="flex gap-2">
-        {tabs.map((t) => (
+        {tabs.map((tabOption) => (
           <button
-            key={t.value}
+            key={tabOption.value}
             type="button"
-            onClick={() => setTab(t.value)}
+            onClick={() => setTab(tabOption.value)}
             className={`rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-              tab === t.value
+              tab === tabOption.value
                 ? "bg-[var(--primary)] text-white shadow-lg shadow-blue-500/20"
                 : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             }`}
           >
-            {t.label}
-            {t.value === "pending" && pending.length > 0 && (
+            {tabOption.label}
+            {tabOption.value === "pending" && pending.length > 0 && (
               <span className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[10px]">
                 {pending.length}
               </span>
@@ -202,35 +366,27 @@ export default function AdminReviewPage() {
                 <p className="text-xs text-[var(--text-muted)] mt-1">
                   Submitted: {bundle.submittedAt ? new Date(bundle.submittedAt).toLocaleDateString() : "—"}
                   <span className="mx-2">·</span>
-                  <span className="font-mono">{bundle.createdBy}</span>
-                  {bundle.reviewedBy && (
-                    <>
-                      <span className="mx-2">·</span>
-                      Reviewed by <span className="font-mono">{bundle.reviewedBy.slice(0, 6)}...{bundle.reviewedBy.slice(-4)}</span>
-                    </>
-                  )}
+                  Creator: <span className="font-mono">{shortAddress(bundle.createdBy)}</span>
                 </p>
               </div>
               <div className="flex gap-2 shrink-0">
-                <Button variant="outline" size="sm" disabled={!bundle.contractPdfName}>
-                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                  {bundle.contractPdfName ? "View PDF" : "No PDF"}
-                </Button>
                 {bundle.status === "under_review" && (
                   <>
                     <Button
                       size="sm"
                       className="bg-[var(--success)] text-white hover:opacity-90"
-                      onClick={() => handleApprove(bundle.id)}
+                      onClick={() => void handleApprove(bundle)}
+                      disabled={pendingBundleId === bundle.id || !isProtocolAdmin}
                     >
-                      ✓ Approve
+                      {pendingBundleId === bundle.id ? "Submitting..." : "Approve"}
                     </Button>
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => setDeclineModal({ id: bundle.id, name: bundle.name })}
+                      onClick={() => setDeclineModal(bundle)}
+                      disabled={pendingBundleId === bundle.id || !isProtocolAdmin}
                     >
-                      ✗ Decline
+                      Decline
                     </Button>
                   </>
                 )}
@@ -257,54 +413,64 @@ export default function AdminReviewPage() {
               </div>
             </dl>
             <div className="mt-4 flex flex-wrap gap-2">
-              {getReviewSignals(bundle).map((signal) => (
-                <div key={signal.label} className="rounded-full bg-[var(--surface-2)] px-3 py-1.5 text-xs">
-                  <span className="text-[var(--text-muted)]">{signal.label}:</span>{" "}
-                  <span className={signal.tone}>{signal.state}</span>
-                </div>
-              ))}
+              {getReviewSignals(bundle).map((signal) => {
+                const Icon = signal.icon;
+                return (
+                  <div
+                    key={signal.label}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1.5"
+                  >
+                    <Icon className={`h-3.5 w-3.5 ${signal.tone}`} />
+                    <span className="text-xs text-[var(--text-muted)]">{signal.label}</span>
+                    <span className={`text-xs font-medium ${signal.tone}`}>{signal.state}</span>
+                  </div>
+                );
+              })}
             </div>
-            {bundle.declineReason && (
-              <p className="text-sm text-[var(--error)] mt-3 p-3 bg-[var(--error)]/10 rounded-lg">
-                Decline reason: {bundle.declineReason}
-              </p>
-            )}
           </div>
         ))}
+
+        {list.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-[var(--border)] px-6 py-10 text-center text-sm text-[var(--text-muted)]">
+            No pools in this review state right now.
+          </div>
+        )}
       </div>
 
-      {list.length === 0 && (
-        <div className="text-center py-16">
-          <p className="text-[var(--text-muted)]">No items in this tab.</p>
-        </div>
-      )}
-
       {declineModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeclineModal(null)} aria-hidden />
-          <div className="relative z-50 w-full max-w-md card-surface p-6 mx-4 shadow-2xl">
-            <h3 className="font-semibold text-[var(--text-primary)] mb-2" style={{ fontFamily: "var(--font-display)" }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
               Decline: {declineModal.name}
-            </h3>
-            <label className="block text-sm text-[var(--text-muted)] mb-2">Reason for decline</label>
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+              Add an internal review note before confirming. The pool status will be stored on-chain,
+              but this note is not stored on-chain yet.
+            </p>
+            <label className="block text-sm text-[var(--text-muted)] mt-4 mb-2">Internal review note</label>
             <textarea
               value={declineReason}
-              onChange={(e) => setDeclineReason(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] min-h-[80px] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-              placeholder="Provide specific feedback for the originator..."
+              onChange={(event) => setDeclineReason(event.target.value)}
+              rows={4}
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--primary)]"
+              placeholder="Example: junior support ratio needs revision before committee approval."
             />
-            <p className="mt-2 text-xs text-[var(--text-muted)]">
-              Include the issue, what needs to change, and any required supporting material. Minimum 12 characters.
-            </p>
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setDeclineModal(null)}>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeclineModal(null);
+                  setDeclineReason("");
+                }}
+              >
                 Cancel
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => handleDecline(declineModal.id, declineReason)}
+                onClick={() => void handleDecline(declineModal, declineReason)}
+                disabled={pendingBundleId === declineModal.id}
               >
-                Confirm Decline
+                {pendingBundleId === declineModal.id ? "Submitting..." : "Decline On-Chain"}
               </Button>
             </div>
           </div>

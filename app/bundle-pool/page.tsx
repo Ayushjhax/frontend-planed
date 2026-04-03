@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useBundles } from "@/hooks/useBundles";
-import { useBundleStore } from "@/lib/stores/useBundleStore";
 import { BundleCard } from "@/components/bundle/BundleCard";
 import { BundleFilters } from "@/components/bundle/BundleFilters";
 import { TrancheAllocationChart } from "@/components/charts/TrancheAllocationChart";
+import { useBundleStore } from "@/lib/stores/useBundleStore";
+import { usePortfolioStore } from "@/lib/stores/usePortfolioStore";
 import type { BundleStatus } from "@/lib/types/bundle";
 import { DollarSign, TrendingUp, Activity, Clock3, Target, ShieldCheck } from "lucide-react";
 
@@ -35,9 +36,28 @@ const statCards = [
 ];
 
 export default function BundlePoolPage() {
-  const { bundles, totalDeployed, activeCount, averageApy, byStatus, liveBundles } = useBundles();
-  const invest = useBundleStore((s) => s.invest);
+  const { bundles, totalDeployed, activeCount, averageApy, byStatus, liveBundles, loading, error } = useBundles();
+  const investDemo = useBundleStore((s) => s.investDemo);
+  const recordDemoInvestment = usePortfolioStore((s) => s.recordDemoInvestment);
   const [filter, setFilter] = useState<BundleStatus | "all">("all");
+
+  const handleInvest = (
+    bundleId: string,
+    tranche: "senior" | "junior",
+    amount: number
+  ) => {
+    const bundle = bundles.find((item) => item.id === bundleId);
+    if (!bundle) return;
+
+    investDemo(bundleId, tranche, amount);
+    recordDemoInvestment({
+      bundleId,
+      bundleName: bundle.name,
+      tranche,
+      amount,
+      txHash: `demo${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
+    });
+  };
 
   const filtered = useMemo(() => byStatus(filter), [byStatus, filter]);
 
@@ -131,7 +151,14 @@ export default function BundlePoolPage() {
           infrastructure, a dual-tranche capital structure, and smart contracts to
           create a more efficient and equitable flow of capital into education.
         </p>
+        
       </div>
+
+      {(loading || error) && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--text-muted)]">
+          {loading ? "Refreshing live bundle state from devnet..." : error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {statCards.map((card, i) => {
@@ -171,8 +198,8 @@ export default function BundlePoolPage() {
               <BundleCard
                 key={bundle.id}
                 bundle={bundle}
-                onInvest={invest}
-                showInvestButtons
+                onInvest={handleInvest}
+                showInvestButtons={bundle.status === "live"}
               />
             ))}
             {filtered.length === 0 && (

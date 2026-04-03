@@ -1,11 +1,15 @@
 "use client";
 
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useWalletStore } from "@/lib/stores/useWalletStore";
-import { Wallet, LogOut, ChevronDown } from "lucide-react";
+import { Wallet, LogOut, ChevronDown, Copy, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
 
 export function WalletButton() {
-  const { connected, address, balance, connect, disconnect } = useWalletStore();
+  const { connected, address, balance, walletName } = useWalletStore();
+  const { disconnect } = useWallet();
+  const { setVisible } = useWalletModal();
   const [open, setOpen] = useState(false);
 
   const truncated = address ? `${address.slice(0, 4)}...${address.slice(-4)}` : "";
@@ -14,7 +18,7 @@ export function WalletButton() {
     return (
       <button
         type="button"
-        onClick={connect}
+        onClick={() => setVisible(true)}
         className="flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 hover:brightness-110 transition-all"
       >
         <Wallet className="h-4 w-4" />
@@ -35,7 +39,7 @@ export function WalletButton() {
         </span>
         <span className="font-mono text-xs">{truncated}</span>
         <span className="text-xs text-[var(--text-muted)]">
-          ${balance.toLocaleString()}
+          {balance.toFixed(2)} SOL
         </span>
         <ChevronDown className="h-3 w-3 text-[var(--text-muted)]" />
       </button>
@@ -44,7 +48,7 @@ export function WalletButton() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-2 z-50 w-56 card-surface p-1 shadow-xl">
             <div className="px-3 py-2 border-b border-[var(--border)]">
-              <p className="text-xs text-[var(--text-muted)]">Demo Wallet</p>
+              <p className="text-xs text-[var(--text-muted)]">{walletName || "Connected Wallet"}</p>
               <p className="text-xs font-mono text-[var(--text-primary)] mt-0.5 truncate">
                 {address}
               </p>
@@ -52,12 +56,37 @@ export function WalletButton() {
             <div className="px-3 py-2 border-b border-[var(--border)]">
               <p className="text-xs text-[var(--text-muted)]">Balance</p>
               <p className="text-sm font-mono text-[var(--text-primary)]">
-                ${balance.toLocaleString()} USDC
+                {balance.toFixed(2)} SOL
               </p>
             </div>
             <button
               type="button"
-              onClick={() => { disconnect(); setOpen(false); }}
+              onClick={async () => {
+                await navigator.clipboard.writeText(address);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Copy address
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setVisible(true);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--surface-2)] transition-colors"
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Change wallet
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void disconnect();
+                setOpen(false);
+              }}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--error)] hover:bg-[var(--surface-2)] transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" />

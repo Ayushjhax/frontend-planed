@@ -5,8 +5,9 @@ import type { BundleStatus } from "@/lib/types/bundle";
 
 export function useBundles() {
   const bundles = useBundleStore((s) => s.bundles);
-  const updateBundle = useBundleStore((s) => s.updateBundle);
-  const addBundle = useBundleStore((s) => s.addBundle);
+  const loading = useBundleStore((s) => s.loading);
+  const error = useBundleStore((s) => s.error);
+  const refreshBundles = useBundleStore((s) => s.refreshBundles);
 
   const byStatus = (status: BundleStatus | "all") => {
     if (status === "all") return bundles;
@@ -25,12 +26,13 @@ export function useBundles() {
 
   return {
     bundles,
+    loading,
+    error,
     liveBundles,
     totalDeployed,
     activeCount: liveBundles.length,
     averageApy: avgApy,
     byStatus,
-    updateBundle,
-    addBundle,
+    refreshBundles,
   };
 }

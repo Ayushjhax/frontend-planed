@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
 import { useForm, FormProvider, type FieldPath } from "react-hook-form";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,11 @@ import { Step4_Review } from "@/components/forms/Step4_Review";
 import { useBundleStore } from "@/lib/stores/useBundleStore";
 import { useWalletStore } from "@/lib/stores/useWalletStore";
 import { useToastStore } from "@/lib/stores/useToastStore";
+import {
+  BUNDLE_CREATION_FEE_RECIPIENT,
+  BUNDLE_CREATION_FEE_SOL,
+  createAssetPoolOnChain,
+} from "@/lib/solana/program";
 import {
   createBundleDefaultValues,
   type CreateBundleFormValues,
@@ -50,10 +56,12 @@ export default function CreateBundlePage() {
   const [step, setStep] = useState(1);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const { connection } = useConnection();
+  const anchorWallet = useAnchorWallet();
   const router = useRouter();
-  const addBundle = useBundleStore((s) => s.addBundle);
+  const refreshBundles = useBundleStore((s) => s.refreshBundles);
   const addToast = useToastStore((s) => s.addToast);
-  const walletAddress = useWalletStore((s) => s.address);
+  const connected = useWalletStore((s) => s.connected);
 
   const form = useForm<CreateBundleFormValues>({
     defaultValues: createBundleDefaultValues,
@@ -127,47 +135,35 @@ export default function CreateBundlePage() {
       return;
     }
 
-    const daysRemaining = Math.max(
-      Math.ceil(
-        (new Date(values.endDate).getTime() - new Date().getTime()) / 86400000
-      ),
-      0
-    );
-
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    const id = `bundle-${Date.now()}`;
-    addBundle({
-      id,
-      name: values.name,
-      oneliner: values.oneliner || "New student loan bundle",
-      description: values.description || "No description provided.",
-      contractPdfName: values.contractPdfName || undefined,
-      status: "under_review",
-      totalGoal: Number(values.totalGoal) || 50000,
-      seniorTarget: Number(values.seniorTarget) || 30000,
-      seniorRaised: 0,
-      juniorTarget: Number(values.juniorTarget) || 20000,
-      juniorRaised: 0,
-      seniorAPY: Number(values.seniorAPY) || 0,
-      juniorAPY: Number(values.juniorAPY) || 1,
-      subordinationRate: Number(values.subordinationRate) || 40,
-      seniorFixedRate: Number(values.seniorFixedRate) || 0,
-      juniorFixedRate: Number(values.juniorFixedRate) || 1,
-      startDate: values.startDate || new Date().toISOString().split("T")[0],
-      endDate: values.endDate || new Date(Date.now() + 60 * 86400000).toISOString().split("T")[0],
-      repaymentFrequency: values.repaymentFrequency || "Monthly",
-      totalRepaymentCycles: Number(values.totalRepaymentCycles) || 12,
-      estimatedFirstRepayment: values.estimatedFirstRepayment || "",
-      redemptionRate: Number(values.redemptionRate) || 100,
-      vaultAddress: "4xK9...mR3q",
-      submittedAt: new Date().toISOString(),
-      createdBy: walletAddress,
-      daysRemaining,
-    });
-    setSubmitting(false);
-    addToast("Bundle submitted for review. You'll be notified once approved.");
-    router.push("/my-bundle");
+
+    try {
+      if (!anchorWallet) {
+        throw new Error("Connect a supported Solana wallet before submitting a bundle.");
+      }
+
+      const result = await createAssetPoolOnChain({
+        connection,
+        wallet: anchorWallet,
+        values,
+      });
+
+      await refreshBundles(connection);
+      addToast(
+        `Bundle submitted on-chain for review. Tx: ${result.signature.slice(0, 8)}...`,
+        "success"
+      );
+      router.push("/my-bundle");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Bundle submission failed. Please try again.";
+
+      addToast(message, "error");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -181,8 +177,13 @@ export default function CreateBundlePage() {
       </h1>
       <p className="text-sm leading-6 text-[var(--text-muted)] mb-8">
         Define the public narrative, tranche terms, and repayment structure investors
-        will review before the bundle can go live.
+        will review before the bundle can go live on Solana.
       </p>
+      {!connected && (
+        <div className="mb-8 rounded-2xl border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-4 py-3 text-sm text-[var(--text-muted)]">
+          Connect your wallet to submit a bundle on devnet. Drafts are no longer stored locally.
+        </div>
+      )}
 
       {/* Step indicator */}
       <div className="flex items-center gap-1 mb-8">
@@ -221,6 +222,7 @@ export default function CreateBundlePage() {
           {step === 4 && (
             <>
               <Step4_Review />
+             
               <label className="flex items-center gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -252,7 +254,7 @@ export default function CreateBundlePage() {
               <Button
                 type="button"
                 onClick={handleFinalSubmit}
-                disabled={!confirmChecked || submitting}
+                disabled={!confirmChecked || submitting || !connected}
               >
                 {submitting ? "Submitting..." : "Submit for Review"}
               </Button>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import {
   AreaChart,
   Area,
@@ -14,9 +15,18 @@ interface InvestorDistributionChartProps {
   data: { month: string; value: number }[];
 }
 
+const subscribe = () => () => {};
+
 export function InvestorDistributionChart({ data }: InvestorDistributionChartProps) {
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
+
   return (
     <div className="h-[280px] min-h-[200px] w-full min-w-0">
+      {!mounted ? (
+        <div className="flex h-full items-center justify-center rounded-xl bg-[var(--surface-2)] text-sm text-[var(--text-muted)]">
+          Loading portfolio chart...
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
@@ -54,6 +64,7 @@ export function InvestorDistributionChart({ data }: InvestorDistributionChartPro
           />
         </AreaChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }

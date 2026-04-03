@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
 interface TrancheAllocationChartProps {
@@ -11,12 +12,16 @@ interface TrancheAllocationChartProps {
 
 const COLORS = ["var(--senior-tranche)", "var(--junior-tranche)"];
 
+const subscribe = () => () => {};
+
 export function TrancheAllocationChart({
   seniorRaised,
   juniorRaised,
   seniorTarget,
   juniorTarget,
 }: TrancheAllocationChartProps) {
+  const mounted = useSyncExternalStore(subscribe, () => true, () => false);
+
   const withValues = [
     { name: "Senior", value: seniorRaised, target: seniorTarget },
     { name: "Junior", value: juniorRaised, target: juniorTarget },
@@ -32,6 +37,11 @@ export function TrancheAllocationChart({
 
   return (
     <div className="h-[280px] min-h-[200px] w-full min-w-0">
+      {!mounted ? (
+        <div className="flex h-full items-center justify-center rounded-xl bg-[var(--surface-2)] text-sm text-[var(--text-muted)]">
+          Loading tranche mix...
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -62,6 +72,7 @@ export function TrancheAllocationChart({
           />
         </PieChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }

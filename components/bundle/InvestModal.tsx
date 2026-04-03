@@ -42,7 +42,7 @@ export function InvestModal({
     try {
       const txHash = await mockTransaction();
       onSuccess(txHash, num);
-      onToast("Investment confirmed!");
+      onToast("Investor subscription flows are being connected next.");
       onOpenChange(false);
       setAmount("");
     } finally {
@@ -74,7 +74,7 @@ export function InvestModal({
             />
           </div>
           <p className="text-sm text-[var(--text-muted)]">
-            Your EDUFI tokens to receive: <strong className="text-[var(--text-primary)]">{tokensDisplay}</strong>
+            Your QuillFi receipt tokens to receive: <strong className="text-[var(--text-primary)]">{tokensDisplay}</strong>
           </p>
           {!connected && (
             <p className="text-sm text-[var(--text-muted)]">Connect your wallet to invest.</p>
@@ -89,7 +89,7 @@ export function InvestModal({
           onClick={handleSubmit}
           disabled={loading || !amount || num <= 0}
         >
-          {loading ? "Confirming..." : "Confirm Investment"}
+          {loading ? "Checking..." : "Join Waitlist"}
         </Button>
       </DialogFooter>
     </Dialog>

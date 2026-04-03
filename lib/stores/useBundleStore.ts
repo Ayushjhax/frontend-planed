@@ -1,76 +1,125 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { Connection } from "@solana/web3.js";
 import type { Bundle } from "@/lib/types/bundle";
-import { demoBundles } from "@/lib/mock/demoData";
+import { fetchAssetPools } from "@/lib/solana/program";
+
+type Tranche = "senior" | "junior";
+
+type BundleCommitments = Record<
+  string,
+  {
+    seniorRaised: number;
+    juniorRaised: number;
+  }
+>;
 
 interface BundleStore {
   bundles: Bundle[];
-  addBundle: (bundle: Bundle) => void;
+  loading: boolean;
+  error: string | null;
+  localCommitments: BundleCommitments;
   updateBundle: (id: string, updates: Partial<Bundle>) => void;
-  invest: (bundleId: string, tranche: "senior" | "junior", amount: number) => void;
-  approveBundle: (id: string, reviewer: string) => void;
-  declineBundle: (id: string, reason: string, reviewer: string) => void;
   setBundles: (bundles: Bundle[]) => void;
+  refreshBundles: (connection: Connection) => Promise<void>;
+  investDemo: (bundleId: string, tranche: Tranche, amount: number) => void;
+  clearError: () => void;
+}
+
+function mergeBundlesWithCommitments(
+  bundles: Bundle[],
+  localCommitments: BundleCommitments
+) {
+  return bundles.map((bundle) => {
+    const commitment = localCommitments[bundle.id];
+    if (!commitment) return bundle;
+
+    return {
+      ...bundle,
+      seniorRaised: bundle.seniorRaised + commitment.seniorRaised,
+      juniorRaised: bundle.juniorRaised + commitment.juniorRaised,
+    };
+  });
 }
 
 export const useBundleStore = create<BundleStore>()(
   persist(
     (set) => ({
-      bundles: demoBundles,
-
-      addBundle: (bundle) =>
-        set((state) => ({ bundles: [...state.bundles, bundle] })),
+      bundles: [],
+      loading: false,
+      error: null,
+      localCommitments: {},
 
       updateBundle: (id, updates) =>
         set((state) => ({
-          bundles: state.bundles.map((b) =>
-            b.id === id ? { ...b, ...updates } : b
+          bundles: state.bundles.map((bundle) =>
+            bundle.id === id ? { ...bundle, ...updates } : bundle
           ),
         })),
 
-      invest: (bundleId, tranche, amount) =>
+      setBundles: (bundles) =>
         set((state) => ({
-          bundles: state.bundles.map((b) => {
-            if (b.id !== bundleId) return b;
-            if (tranche === "senior")
-              return { ...b, seniorRaised: b.seniorRaised + amount };
-            return { ...b, juniorRaised: b.juniorRaised + amount };
-          }),
+          bundles: mergeBundlesWithCommitments(bundles, state.localCommitments),
         })),
 
-      approveBundle: (id, reviewer) =>
-        set((state) => ({
-          bundles: state.bundles.map((b) =>
-            b.id === id
-              ? {
-                  ...b,
-                  status: "live" as const,
-                  approvedAt: new Date().toISOString(),
-                  reviewedAt: new Date().toISOString(),
-                  reviewedBy: reviewer,
-                  declineReason: undefined,
-                }
-              : b
-          ),
-        })),
+      refreshBundles: async (connection) => {
+        set({ loading: true, error: null });
 
-      declineBundle: (id, reason, reviewer) =>
-        set((state) => ({
-          bundles: state.bundles.map((b) =>
-            b.id === id
-              ? {
-                  ...b,
-                  status: "declined" as const,
-                  declineReason: reason,
-                  reviewedAt: new Date().toISOString(),
-                  reviewedBy: reviewer,
-                }
-              : b
-          ),
-        })),
+        try {
+          const bundles = await fetchAssetPools(connection);
+          set((state) => ({
+            bundles: mergeBundlesWithCommitments(bundles, state.localCommitments),
+            loading: false,
+          }));
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to load on-chain bundles right now.";
 
-      setBundles: (bundles) => set({ bundles }),
+          set({ loading: false, error: message });
+        }
+      },
+
+      investDemo: (bundleId, tranche, amount) =>
+        set((state) => {
+          const existing = state.localCommitments[bundleId] ?? {
+            seniorRaised: 0,
+            juniorRaised: 0,
+          };
+          const nextCommitment = {
+            seniorRaised:
+              existing.seniorRaised + (tranche === "senior" ? amount : 0),
+            juniorRaised:
+              existing.juniorRaised + (tranche === "junior" ? amount : 0),
+          };
+
+          return {
+            localCommitments: {
+              ...state.localCommitments,
+              [bundleId]: nextCommitment,
+            },
+            bundles: state.bundles.map((bundle) => {
+              if (bundle.id !== bundleId) return bundle;
+
+              return {
+                ...bundle,
+                seniorRaised:
+                  bundle.seniorRaised + (tranche === "senior" ? amount : 0),
+                juniorRaised:
+                  bundle.juniorRaised + (tranche === "junior" ? amount : 0),
+              };
+            }),
+          };
+        }),
+
+      clearError: () => set({ error: null }),
     }),
-    { name: "edufi-bundles", version: 1 }
+    {
+      name: "quillfi-bundle-commitments",
+      partialize: (state) => ({
+        localCommitments: state.localCommitments,
+      }),
+    }
   )
 );

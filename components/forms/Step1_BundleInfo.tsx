@@ -69,22 +69,28 @@ export function Step1_BundleInfo() {
         )}
       </div>
       <div>
-        <Label htmlFor="description">Bundle Description *</Label>
+        <Label htmlFor="description">Bundle Description</Label>
         <textarea
           id="description"
           rows={4}
           placeholder="Full description of the student loan pool..."
           className="flex w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] mt-1.5 resize-none"
           {...register("description", {
-            required: "A detailed bundle description is required.",
-            minLength: {
-              value: 40,
-              message: "Add a little more context for reviewers and investors.",
+            validate: (value) => {
+              if (!value || value.trim().length === 0) {
+                return true;
+              }
+
+              if (value.trim().length < 10) {
+                return "If you add a description, use at least 10 characters.";
+              }
+
+              return true;
             },
           })}
         />
         <p className="text-xs text-[var(--text-muted)] mt-1">
-          Explain the originator, student borrower profile, market, repayment model, and why this pool matters. {desc.length} chars
+          Optional. Add context on the originator, borrower profile, market, or repayment approach if helpful for reviewers and investors. {desc.length} chars
         </p>
         {errors.description && (
           <p className="text-xs text-[var(--error)] mt-1">{errors.description.message}</p>

@@ -1,29 +1,11 @@
 import type { Metadata } from "next";
-import { DM_Serif_Display, IBM_Plex_Mono, JetBrains_Mono } from "next/font/google";
+import "@solana/wallet-adapter-react-ui/styles.css";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { WalletProvider } from "@/components/providers/WalletProvider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopNav } from "@/components/layout/TopNav";
 import { ToastContainer } from "@/components/ui/toast";
-
-const dmSerif = DM_Serif_Display({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-display",
-});
-
-const ibmPlex = IBM_Plex_Mono({
-  weight: ["400", "500", "600"],
-  subsets: ["latin"],
-  variable: "--font-body",
-});
-
-const jetbrains = JetBrains_Mono({
-  weight: ["400", "500"],
-  subsets: ["latin"],
-  variable: "--font-data",
-});
 
 export const metadata: Metadata = {
   title: "QuillFi — Onchain Student Loan Finance",
@@ -37,9 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body
-        className={`${dmSerif.variable} ${ibmPlex.variable} ${jetbrains.variable} font-sans antialiased`}
-      >
+      <body className="font-sans antialiased">
         <ThemeProvider>
           <WalletProvider>
             <div className="layout-shell">

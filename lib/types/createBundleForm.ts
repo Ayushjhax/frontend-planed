@@ -28,7 +28,7 @@ export const createBundleDefaultValues: CreateBundleFormValues = {
   seniorTarget: 30000,
   juniorTarget: 20000,
   subordinationRate: 40,
-  seniorFixedRate: 0,
+  seniorFixedRate: 1,
   juniorFixedRate: 1,
   seniorAPY: 0,
   juniorAPY: 1,

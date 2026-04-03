@@ -78,7 +78,7 @@ export function Sidebar() {
                 <span className="inline-flex items-center rounded-md bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--primary)]">
                   Devnet
                 </span>
-                <span className="text-[10px] text-[var(--text-muted)]">Demo Mode</span>
+                <span className="text-[10px] text-[var(--text-muted)]">Live</span>
               </div>
             </>
           ) : (
